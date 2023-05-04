@@ -1,14 +1,14 @@
+from scipy.optimize import differential_evolution
+from sklearn.preprocessing import MinMaxScaler
+import torch.nn.functional as F
+import torch.nn as nn
+import torch
+import pandas as pd
+import ghhops_server as hs
+from flask import Flask
 import warnings
 warnings.simplefilter("ignore", UserWarning)
 
-from flask import Flask
-import ghhops_server as hs
-import pandas as pd
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from sklearn.preprocessing import MinMaxScaler
-from scipy.optimize import differential_evolution
 
 app = Flask(__name__)
 hops = hs.Hops(app)
@@ -39,7 +39,7 @@ class Net(nn.Module):
 
 
 # Load model
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 model = Net().to(device)
 model.load_state_dict(torch.load(
     "model/model_bs8_lr1.6e-05_wd0.01_epochs2000_tl6.15.pt", map_location=torch.device('cpu')))
@@ -109,7 +109,7 @@ def predict(sc_height, sc_orient, room_orient, room_width, room_depth):
 
 
 def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: float, beta: float):
-    # Closures for internal use
+    # Closures for internal usage
     def objective(x, x3, x4, x5, a, b):
         input = torch.tensor([[x[0], x[1], x3, x4, x5]], dtype=torch.float32)
         output = model(input)
@@ -130,6 +130,7 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
     _, _, norm_room_orient, norm_room_width, norm_room_depth = in_norm(
         0, 0, room_orient, room_width, room_depth)
 
+    # We use scipy's differential evolution algorithm for optimization on global minimal
     result = differential_evolution(objective, [(0, 100), (0, 100)], args=(
         norm_room_orient, norm_room_width, norm_room_depth, alpha, beta * BETA_AMPLIFICATION), seed=1)
     norm_sc_height, norm_sc_orient = result.x
@@ -142,7 +143,7 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
     "/optimize",
     name="Optimize",
     description=("Optimize solar chimney design parameters given room orientation and dimensions, "
-                 "minimizing the objective = a * normalized_NS_OT_THDH + b * normalized_Volumn_Ratio"),
+                 "minimizing objective = alpha * normalized_NS_OT_THDH + beta * normalized_Volumn_Ratio"),
     icon="logo.png",
     inputs=[
         hs.HopsNumber("RoomOrient", "room_orient",
