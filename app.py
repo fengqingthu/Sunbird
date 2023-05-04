@@ -1,10 +1,13 @@
+import random
 from flask import Flask
 import ghhops_server as hs
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import optim
 from sklearn.preprocessing import MinMaxScaler
+from scipy.optimize import differential_evolution
 
 app = Flask(__name__)
 hops = hs.Hops(app)
@@ -35,9 +38,11 @@ class Net(nn.Module):
 
 
 # Load model
-model = Net()
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = Net().to(device)
 model.load_state_dict(torch.load(
     "model/model_bs8_lr1.6e-05_wd0.01_epochs2000_tl6.15.pt", map_location=torch.device('cpu')))
+model.eval()
 
 # Load data
 df = pd.read_csv("data/purged.csv")
@@ -100,6 +105,38 @@ def _predict(sc_height, sc_orient, room_orient, room_width, room_depth):
 def predict(sc_height, sc_orient, room_orient, room_width, room_depth):
     res = _predict(sc_height, sc_orient, room_orient, room_width, room_depth)
     return tuple(res)
+
+
+def in_norm(sc_height, sc_orient, room_orient, room_width, room_depth):
+    return tuple(in_scaler.transform(pd.DataFrame(
+        [[sc_height, sc_orient, room_orient, room_width, room_depth]])).astype('float32')[0].tolist())
+
+
+def in_inverse(norm_sc_height, norm_sc_orient, norm_room_orient, norm_room_width, norm_room_depth):
+    return tuple(in_scaler.inverse_transform(pd.DataFrame(
+        [[norm_sc_height, norm_sc_orient, norm_room_orient, norm_room_width, norm_room_depth]])).astype('float32')[0].tolist())
+
+
+def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: float, beta: float):
+    _, _, norm_room_orient, norm_room_width, norm_room_depth = in_norm(
+        0, 0, room_orient, room_width, room_depth)
+
+    def _objective(x, x3, x4, x5, a, b):
+        input = torch.tensor([[x[0], x[1], x3, x4, x5]], dtype=torch.float32)
+        output = model(input)
+        print(a * output[0][6].item())
+        print(b * x[0] / (x4 * x5 + 1))
+        res = a * output[0][6].item() + b * x[0] / (x4 * x5 + 1)
+        return res
+
+    result = differential_evolution(_objective, [(0, 100), (0, 100)], args=(
+        norm_room_orient, norm_room_width, norm_room_depth, alpha, beta), seed=1)
+    norm_sc_height, norm_sc_orient = result.x
+    sc_height, sc_orient, _, _, _ = in_inverse(
+        norm_sc_height, norm_sc_orient, 0, 0, 0)
+    print("Minimum value:", result.fun)
+    print("Minimum location:", (sc_height, int(sc_orient)))
+    return result.fun, sc_height, int(sc_orient)
 
 
 if __name__ == "__main__":
