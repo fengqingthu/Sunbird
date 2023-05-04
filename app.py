@@ -70,7 +70,7 @@ def _predict(sc_height, sc_orient, room_orient, room_width, room_depth):
     "/predict",
     name="Predict",
     description="Predict the performance with given solar chimney design parameters",
-    icon="logo.png",
+    icon="predict.jpeg",
     inputs=[
         hs.HopsNumber("SolarChimneyHeight", "sc_height",
                       "Solar chimney height", default=4.0),
@@ -111,7 +111,7 @@ def predict(sc_height, sc_orient, room_orient, room_width, room_depth):
 def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: float, beta: float):
     # Closures for internal usage
     def objective(x, x3, x4, x5, a, b):
-        input = torch.tensor([[x[0], x[1], x3, x4, x5]], dtype=torch.float32)
+        input = torch.tensor([[x[0], round(x[1]), x3, x4, x5]], dtype=torch.float32)
         output = model(input)
         # print(a * output[0][6].item())
         # print(b * x[0] / (x4 * x5 + 1))
@@ -136,7 +136,7 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
     norm_sc_height, norm_sc_orient = result.x
     sc_height, sc_orient, _, _, _ = in_inverse(
         norm_sc_height, norm_sc_orient, 0, 0, 0)
-    return result.fun, sc_height, int(sc_orient)
+    return result.fun, sc_height, round(sc_orient)
 
 
 @hops.component(
@@ -144,7 +144,7 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
     name="Optimize",
     description=("Optimize solar chimney design parameters given room orientation and dimensions, "
                  "minimizing objective = alpha * normalized_NS_OT_THDH + beta * normalized_Volumn_Ratio"),
-    icon="logo.png",
+    icon="optimize.jpeg",
     inputs=[
         hs.HopsNumber("RoomOrient", "room_orient",
                       "Room orientation", default=0.0),
