@@ -1,11 +1,12 @@
-import random
+import warnings
+warnings.simplefilter("ignore", UserWarning)
+
 from flask import Flask
 import ghhops_server as hs
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch import optim
 from sklearn.preprocessing import MinMaxScaler
 from scipy.optimize import differential_evolution
 
@@ -69,7 +70,7 @@ def _predict(sc_height, sc_orient, room_orient, room_width, room_depth):
     "/predict",
     name="Predict",
     description="Predict the performance with given solar chimney design parameters",
-    icon="predict.png",
+    icon="logo.png",
     inputs=[
         hs.HopsNumber("SolarChimneyHeight", "sc_height",
                       "Solar chimney height", default=4.0),
@@ -107,36 +108,84 @@ def predict(sc_height, sc_orient, room_orient, room_width, room_depth):
     return tuple(res)
 
 
-def in_norm(sc_height, sc_orient, room_orient, room_width, room_depth):
-    return tuple(in_scaler.transform(pd.DataFrame(
-        [[sc_height, sc_orient, room_orient, room_width, room_depth]])).astype('float32')[0].tolist())
-
-
-def in_inverse(norm_sc_height, norm_sc_orient, norm_room_orient, norm_room_width, norm_room_depth):
-    return tuple(in_scaler.inverse_transform(pd.DataFrame(
-        [[norm_sc_height, norm_sc_orient, norm_room_orient, norm_room_width, norm_room_depth]])).astype('float32')[0].tolist())
-
-
 def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: float, beta: float):
-    _, _, norm_room_orient, norm_room_width, norm_room_depth = in_norm(
-        0, 0, room_orient, room_width, room_depth)
-
-    def _objective(x, x3, x4, x5, a, b):
+    # Closures for internal use
+    def objective(x, x3, x4, x5, a, b):
         input = torch.tensor([[x[0], x[1], x3, x4, x5]], dtype=torch.float32)
         output = model(input)
-        print(a * output[0][6].item())
-        print(b * x[0] / (x4 * x5 + 1))
+        # print(a * output[0][6].item())
+        # print(b * x[0] / (x4 * x5 + 1))
         res = a * output[0][6].item() + b * x[0] / (x4 * x5 + 1)
         return res
 
-    result = differential_evolution(_objective, [(0, 100), (0, 100)], args=(
-        norm_room_orient, norm_room_width, norm_room_depth, alpha, beta), seed=1)
+    def in_norm(sc_height, sc_orient, room_orient, room_width, room_depth):
+        return tuple(in_scaler.transform(pd.DataFrame(
+            [[sc_height, sc_orient, room_orient, room_width, room_depth]])).astype('float32')[0].tolist())
+
+    def in_inverse(norm_sc_height, norm_sc_orient, norm_room_orient, norm_room_width, norm_room_depth):
+        return tuple(in_scaler.inverse_transform(pd.DataFrame(
+            [[norm_sc_height, norm_sc_orient, norm_room_orient, norm_room_width, norm_room_depth]])).astype('float32')[0].tolist())
+
+    BETA_AMPLIFICATION = 1000  # Empirically picked
+    _, _, norm_room_orient, norm_room_width, norm_room_depth = in_norm(
+        0, 0, room_orient, room_width, room_depth)
+
+    result = differential_evolution(objective, [(0, 100), (0, 100)], args=(
+        norm_room_orient, norm_room_width, norm_room_depth, alpha, beta * BETA_AMPLIFICATION), seed=1)
     norm_sc_height, norm_sc_orient = result.x
     sc_height, sc_orient, _, _, _ = in_inverse(
         norm_sc_height, norm_sc_orient, 0, 0, 0)
-    print("Minimum value:", result.fun)
-    print("Minimum location:", (sc_height, int(sc_orient)))
     return result.fun, sc_height, int(sc_orient)
+
+
+@hops.component(
+    "/optimize",
+    name="Optimize",
+    description=("Optimize solar chimney design parameters given room orientation and dimensions, "
+                 "minimizing the objective = a * normalized_NS_OT_THDH + b * normalized_Volumn_Ratio"),
+    icon="logo.png",
+    inputs=[
+        hs.HopsNumber("RoomOrient", "room_orient",
+                      "Room orientation", default=0.0),
+        hs.HopsNumber("RoomWidth", "room_width",
+                      "Room width", default=10.0),
+        hs.HopsNumber("RoomDepth", "room_depth",
+                      "Room depth", default=10.0),
+        hs.HopsNumber("Alpha", "alpha",
+                      "Coefficient of NewScheduleOfficeTimeTooHotDiscomfortHours", default=1.0),
+        hs.HopsNumber("Beta", "beta",
+                      "Coefficient of VolumeRatio", default=1.0),
+    ],
+    outputs=[
+        hs.HopsNumber("OptimizedSolarChimneyHeight", "op_sc_height",
+                      "Optimized solar chimney height"),
+        hs.HopsNumber("OptimizedSolarChimneyOrient", "op_sc_orient",
+                      "Optimized solar chimney orientation"),
+        hs.HopsNumber("MinObjectiveResult", "op_value",
+                      "Minimial objective function value"),
+        hs.HopsNumber("FlowRate", "flow_rate", "Air flow rate, m3/hr"),
+        hs.HopsNumber("TotalDiscomfortHours", "total_dh",
+                      "Total discomfort hours all year, hr/yr"),
+        hs.HopsNumber("TooHotDiscomfortHours", "too_hot_dh",
+                      "Too hot discomfort hours all year, hr/yr"),
+        hs.HopsNumber("OT_TotalDiscomfortHours", "ot_total_dh",
+                      "Total discomfort hours during office time, hr/yr"),
+        hs.HopsNumber("OT_TooHotDiscomfortHours", "ot_too_hot_dh",
+                      "Too hot discomfort hours during office time, hr/yr"),
+        hs.HopsNumber("NS_OT_TotalDiscomfortHours", "ns_ot_total_dh",
+                      "New schedule (with cooling) total discomfort hours during office time , hr/yr"),
+        hs.HopsNumber("NS_OT_TooHotDiscomfortHours", "ns_ot_toohot_dh",
+                      "New schedule (with cooling) too hot discomfort hours during office time , hr/yr"),
+        hs.HopsNumber("TotalEnergyUse", "total_eui",
+                      "Total energy use intensity, kwh/yrm2"),
+        hs.HopsNumber("CoolingEnergyUSe", "cooling_eui",
+                      "Cooling energy use intensity (new schedule), kwh/yrm2"),
+    ],
+)
+def optimize(room_orient, room_width, room_depth, alpha, beta):
+    mn, sc_height, sc_orient = _optimize(
+        room_orient, room_width, room_depth, alpha, beta)
+    return tuple([sc_height, sc_orient, mn] + _predict(sc_height, sc_orient, room_orient, room_width, room_depth))
 
 
 if __name__ == "__main__":
