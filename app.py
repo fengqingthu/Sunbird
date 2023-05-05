@@ -215,7 +215,7 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
 def optimize(room_orient, room_width, room_depth, alpha, is_28):
     sc_height, sc_orient = _optimize(
         room_orient, room_width, room_depth, alpha, is_28)
-    return tuple([sc_height, sc_orient] + _predict(sc_height, sc_orient, room_orient, room_width, room_depth))
+    return tuple([sc_height, sc_orient] + _predict(sc_height, sc_orient, room_orient, room_width, room_depth, is_28))
 
 
 if __name__ == "__main__":
