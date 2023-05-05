@@ -108,14 +108,14 @@ def predict(sc_height, sc_orient, room_orient, room_width, room_depth):
     return tuple(res)
 
 
-def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: float, beta: float):
+def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: float):
+    BETA_AMPLIFICATION = 1000  # Empirically picked
+
     # Closures for internal usage
-    def objective(x, x3, x4, x5, a, b):
+    def objective(x, x3, x4, x5, a):
         input = torch.tensor([[x[0], round(x[1]), x3, x4, x5]], dtype=torch.float32)
         output = model(input)
-        # print(a * output[0][6].item())
-        # print(b * x[0] / (x4 * x5 + 1))
-        res = a * output[0][6].item() + b * x[0] / (x4 * x5 + 1)
+        res = a * output[0][6].item() + BETA_AMPLIFICATION * x[0] / (x4 * x5 + 1)
         return res
 
     def in_norm(sc_height, sc_orient, room_orient, room_width, room_depth):
@@ -126,24 +126,23 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
         return tuple(in_scaler.inverse_transform(pd.DataFrame(
             [[norm_sc_height, norm_sc_orient, norm_room_orient, norm_room_width, norm_room_depth]])).astype('float32')[0].tolist())
 
-    BETA_AMPLIFICATION = 1000  # Empirically picked
     _, _, norm_room_orient, norm_room_width, norm_room_depth = in_norm(
         0, 0, room_orient, room_width, room_depth)
 
     # We use scipy's differential evolution algorithm for optimization on global minimal
     result = differential_evolution(objective, [(0, 100), (0, 100)], args=(
-        norm_room_orient, norm_room_width, norm_room_depth, alpha, beta * BETA_AMPLIFICATION), seed=1)
+        norm_room_orient, norm_room_width, norm_room_depth, alpha), seed=1)
     norm_sc_height, norm_sc_orient = result.x
     sc_height, sc_orient, _, _, _ = in_inverse(
         norm_sc_height, norm_sc_orient, 0, 0, 0)
-    return result.fun, sc_height, round(sc_orient)
+    return sc_height, round(sc_orient)
 
 
 @hops.component(
     "/optimize",
     name="Optimize",
     description=("Optimize solar chimney design parameters given room orientation and dimensions, "
-                 "minimizing objective = alpha * normalized_NS_OT_THDH + beta * normalized_Volumn_Ratio"),
+                 "minimizing objective = alpha * normalized_NS_OT_THDH + normalized_Volumn_Ratio"),
     icon="optimize.jpeg",
     inputs=[
         hs.HopsNumber("RoomOrient", "room_orient",
@@ -153,17 +152,13 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
         hs.HopsNumber("RoomDepth", "room_depth",
                       "Room depth", default=10.0),
         hs.HopsNumber("Alpha", "alpha",
-                      "Coefficient of NewScheduleOfficeTimeTooHotDiscomfortHours", default=1.0),
-        hs.HopsNumber("Beta", "beta",
-                      "Coefficient of VolumeRatio", default=1.0),
+                      "Ratio of coefficient of NewScheduleOfficeTimeTooHotDiscomfortHours over VolumeRatio", default=1.0),
     ],
     outputs=[
         hs.HopsNumber("OptimizedSolarChimneyHeight", "op_sc_height",
                       "Optimized solar chimney height"),
         hs.HopsNumber("OptimizedSolarChimneyOrient", "op_sc_orient",
                       "Optimized solar chimney orientation"),
-        hs.HopsNumber("MinObjectiveResult", "op_value",
-                      "Minimial objective function value"),
         hs.HopsNumber("FlowRate", "flow_rate", "Air flow rate, m3/hr"),
         hs.HopsNumber("TotalDiscomfortHours", "total_dh",
                       "Total discomfort hours all year, hr/yr"),
@@ -183,10 +178,10 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
                       "Cooling energy use intensity (new schedule), kwh/yrm2"),
     ],
 )
-def optimize(room_orient, room_width, room_depth, alpha, beta):
-    mn, sc_height, sc_orient = _optimize(
-        room_orient, room_width, room_depth, alpha, beta)
-    return tuple([sc_height, sc_orient, mn] + _predict(sc_height, sc_orient, room_orient, room_width, room_depth))
+def optimize(room_orient, room_width, room_depth, alpha):
+    sc_height, sc_orient = _optimize(
+        room_orient, room_width, room_depth, alpha)
+    return tuple([sc_height, sc_orient] + _predict(sc_height, sc_orient, room_orient, room_width, room_depth))
 
 
 if __name__ == "__main__":
