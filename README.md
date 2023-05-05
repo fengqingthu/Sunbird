@@ -9,6 +9,10 @@
 
 2. Clone this repository
 
+   ```bash
+   $ git clone https://github.com/fengqingthu/Sunbird.git
+   ```
+
 3. Navigate into the project directory
 
    ```bash
@@ -37,4 +41,4 @@
 7. You should be able to access the APIs using [Hops](https://developer.rhino3d.com/guides/compute/hops-component/) at http://localhost:5000/predict and http://localhost:5000/optimize. See also this [example.gh](https://github.com/fengqingthu/Sunbird/blob/main/example.gh).
 
 ## Data & Training
-Our [dataset](https://github.com/fengqingthu/Sunbird/blob/main/data/purged.csv) and [training script](https://github.com/fengqingthu/Sunbird/blob/main/train.ipynb) are also included for your reference in case you want to import your own data.
+Our [dataset](https://github.com/fengqingthu/Sunbird/blob/main/data/purged.csv) and [training script](https://colab.research.google.com/drive/1IFtweQr6FRN_HqoQ-B03fmwA4TwQNhnl#scrollTo=idxsdXQyYKTo) are also included for your reference in case you want to import your own data.
