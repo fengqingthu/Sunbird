@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+Sunbird is a Grasshopper plugin for solar chimney design optimization built by Qing Feng and Iris Chen, as a final project for Harvard GSD SCI6484 Data Science for Performance-Driven Design. Sunbird provides powerful toolkits for solar chimney building performance simulation and optimization.
 
 ## Instructions
 
@@ -38,7 +39,7 @@
    $ flask run
    ```
 
-7. You should be able to access the APIs using [Hops](https://developer.rhino3d.com/guides/compute/hops-component/) at http://localhost:5000/predict and http://localhost:5000/optimize. See also this [example.gh](https://github.com/fengqingthu/Sunbird/blob/main/example.gh).
+7. You should be able to access the APIs using [Hops](https://developer.rhino3d.com/guides/compute/hops-component/) at http://localhost:5000/predict and http://localhost:5000/optimize. See also this [example.gh](https://github.com/fengqingthu/Sunbird/blob/main/example.gh). You will need to use [Hops 0.15.0](https://www.food4rhino.com/en/app/hops).
 
 ## Data & Training
 Our [dataset](https://github.com/fengqingthu/Sunbird/blob/main/data/purged.csv) and [training script](https://colab.research.google.com/drive/1IFtweQr6FRN_HqoQ-B03fmwA4TwQNhnl#scrollTo=idxsdXQyYKTo) are also included for your reference in case you want to import your own data.
