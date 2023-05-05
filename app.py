@@ -1,3 +1,4 @@
+import traceback
 from scipy.optimize import differential_evolution
 from sklearn.preprocessing import MinMaxScaler
 import torch.nn.functional as F
@@ -40,22 +41,42 @@ class Net(nn.Module):
 
 # Load model
 device = torch.device('cpu')
-model = Net().to(device)
-model.load_state_dict(torch.load(
-    "model/model_bs8_lr1.6e-05_wd0.01_epochs2000_tl6.15.pt", map_location=torch.device('cpu')))
-model.eval()
+model_28 = Net().to(device)
+model_28.load_state_dict(torch.load(
+    "model/28_model_bs8_lr1.6e-05_wd0.01_epochs2000_tl6.15.pt", map_location=torch.device('cpu')))
+model_28.eval()
+
+model_26 = Net().to(device)
+model_26.load_state_dict(torch.load(
+    "model/26_model_bs8_lr1.6e-06_wd0.01_epochs2000_tl4.92.pt", map_location=torch.device('cpu')))
+model_26.eval()
 
 # Load data
-df = pd.read_csv("data/purged.csv")
+df_28 = pd.read_csv("data/purged_28.csv")
+df_26 = pd.read_csv("data/purged_26.csv")
 
 # Build scaler and fit data range
-in_scaler = MinMaxScaler(feature_range=(0, 100))
-in_scaler.fit(df.iloc[:, :5])
-out_scaler = MinMaxScaler(feature_range=(0, 100))
-out_scaler.fit(df.iloc[:, 5:])
+in_scaler_28 = MinMaxScaler(feature_range=(0, 100))
+in_scaler_28.fit(df_28.iloc[:, :5])
+out_scaler_28 = MinMaxScaler(feature_range=(0, 100))
+out_scaler_28.fit(df_28.iloc[:, 5:])
+
+in_scaler_26 = MinMaxScaler(feature_range=(0, 100))
+in_scaler_26.fit(df_26.iloc[:, :5])
+out_scaler_26 = MinMaxScaler(feature_range=(0, 100))
+out_scaler_26.fit(df_26.iloc[:, 5:])
 
 
-def _predict(sc_height, sc_orient, room_orient, room_width, room_depth):
+def _predict(sc_height, sc_orient, room_orient, room_width, room_depth, is_28=True):
+    if is_28:
+        in_scaler = in_scaler_28
+        out_scaler = out_scaler_28
+        model = model_28
+    else:
+        in_scaler = in_scaler_26
+        out_scaler = out_scaler_26
+        model = model_26
+
     input = torch.from_numpy(in_scaler.transform(pd.DataFrame(
         [[sc_height, sc_orient, room_orient, room_width, room_depth]])).astype('float32'))
 
@@ -82,6 +103,8 @@ def _predict(sc_height, sc_orient, room_orient, room_width, room_depth):
                       "Room width", default=10.0),
         hs.HopsNumber("RoomDepth", "room_depth",
                       "Room depth", default=10.0),
+        hs.HopsBoolean("IsACThresh28C", "ac_thresh_28",
+                       "Whether the temprature threshold for air conditioning is set 28 celcius, or 26", default=True),
     ],
     outputs=[
         hs.HopsNumber("FlowRate", "flow_rate", "Air flow rate, m3/hr"),
@@ -103,19 +126,28 @@ def _predict(sc_height, sc_orient, room_orient, room_width, room_depth):
                       "Cooling energy use intensity (new schedule), kwh/yrm2"),
     ],
 )
-def predict(sc_height, sc_orient, room_orient, room_width, room_depth):
-    res = _predict(sc_height, sc_orient, room_orient, room_width, room_depth)
+def predict(sc_height, sc_orient, room_orient, room_width, room_depth, is_28):
+    res = _predict(sc_height, sc_orient, room_orient,
+                   room_width, room_depth, is_28)
     return tuple(res)
 
 
-def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: float):
+def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: float, is_28: bool = True):
     BETA_AMPLIFICATION = 1000  # Empirically picked
+    if is_28:
+        in_scaler = in_scaler_28
+        model = model_28
+    else:
+        in_scaler = in_scaler_26
+        model = model_26
 
     # Closures for internal usage
     def objective(x, x3, x4, x5, a):
-        input = torch.tensor([[x[0], round(x[1]), x3, x4, x5]], dtype=torch.float32)
+        input = torch.tensor(
+            [[x[0], round(x[1]), x3, x4, x5]], dtype=torch.float32)
         output = model(input)
-        res = a * output[0][6].item() + BETA_AMPLIFICATION * x[0] / (x4 * x5 + 1)
+        res = a * output[0][6].item() + BETA_AMPLIFICATION * \
+            x[0] / (x4 * x5 + 1)
         return res
 
     def in_norm(sc_height, sc_orient, room_orient, room_width, room_depth):
@@ -153,6 +185,8 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
                       "Room depth", default=10.0),
         hs.HopsNumber("Alpha", "alpha",
                       "Ratio of coefficient of NewScheduleOfficeTimeTooHotDiscomfortHours over VolumeRatio", default=1.0),
+        hs.HopsBoolean("IsACThresh28C", "ac_thresh_28",
+                       "Whether the temprature threshold for air conditioning is set 28 celcius, or 26", default=True),
     ],
     outputs=[
         hs.HopsNumber("OptimizedSolarChimneyHeight", "op_sc_height",
@@ -178,9 +212,9 @@ def _optimize(room_orient: float, room_width: float, room_depth: float, alpha: f
                       "Cooling energy use intensity (new schedule), kwh/yrm2"),
     ],
 )
-def optimize(room_orient, room_width, room_depth, alpha):
+def optimize(room_orient, room_width, room_depth, alpha, is_28):
     sc_height, sc_orient = _optimize(
-        room_orient, room_width, room_depth, alpha)
+        room_orient, room_width, room_depth, alpha, is_28)
     return tuple([sc_height, sc_orient] + _predict(sc_height, sc_orient, room_orient, room_width, room_depth))
 
 
